@@ -31,7 +31,7 @@ ADMIN_ID = int(os.getenv("ADMIN_ID"))
 # WEBHOOK
 # =========================
 
-WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")
+WEBHOOK_HOST = "https://botproject-2.onrender.com"
 
 WEBHOOK_PATH = "/webhook"
 
