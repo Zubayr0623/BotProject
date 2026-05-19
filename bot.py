@@ -1,21 +1,55 @@
 import asyncio
+import logging
+import os
 import re
 from datetime import datetime
 
+from aiohttp import web
 from aiogram import Bot, Dispatcher
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 from aiogram.filters import Command
 from aiogram.types import Message
-from aiogram.enums import ParseMode
-from aiogram.client.default import DefaultBotProperties
+from aiogram.webhook.aiohttp_server import (
+    SimpleRequestHandler,
+    setup_application
+)
 
-TOKEN = "8753255522:AAFF44KSdLD365yw3PU-bcTB6gJWKvINZ-M"
+from dotenv import load_dotenv
 
-# ADMIN ID
-ADMIN_ID = 1388906583
+# =========================
+# ENV
+# =========================
+
+load_dotenv()
+
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
+
+# =========================
+# WEBHOOK
+# =========================
+
+WEBHOOK_HOST = os.getenv("RENDER_EXTERNAL_URL")
+
+WEBHOOK_PATH = "/webhook"
+
+WEBHOOK_URL = f"{WEBHOOK_HOST}{WEBHOOK_PATH}"
+
+WEB_SERVER_HOST = "0.0.0.0"
+
+WEB_SERVER_PORT = int(os.getenv("PORT", 10000))
+
+# =========================
+# BOT
+# =========================
 
 bot = Bot(
-    token=TOKEN,
-    default=DefaultBotProperties(parse_mode=ParseMode.HTML)
+    token=BOT_TOKEN,
+    default=DefaultBotProperties(
+        parse_mode=ParseMode.HTML
+    )
 )
 
 dp = Dispatcher()
@@ -24,13 +58,10 @@ dp = Dispatcher()
 # DATABASE
 # =========================
 
-# TESTLAR
 tests = {}
 
-# O'QUVCHILAR
 students = {}
 
-# NATIJALAR
 results = []
 
 # =========================
@@ -50,7 +81,10 @@ async def start_handler(message: Message):
 
             "📌 Test qo'shish:\n\n"
 
-            "/addtest TEST_ID BOSHLANISH TUGASH JAVOBLAR\n\n"
+            "/addtest TEST_ID "
+            "BOSHLANISH "
+            "TUGASH "
+            "JAVOBLAR\n\n"
 
             "📍 Misol:\n\n"
 
@@ -63,8 +97,11 @@ async def start_handler(message: Message):
 
             "/addtest 332 0 0 1A 2B 3C\n\n"
 
-            "📊 Natijalarni ko'rish:\n"
-            "/results"
+            "📊 Natijalar:\n"
+            "/results\n\n"
+
+            "📊 Bitta test:\n"
+            "/results 331"
         )
 
     # USER
@@ -79,7 +116,7 @@ async def start_handler(message: Message):
         )
 
 # =========================
-# MAIN HANDLER
+# MAIN
 # =========================
 
 @dp.message()
@@ -96,7 +133,7 @@ async def main_handler(message: Message):
     if user_id == ADMIN_ID:
 
         # =========================
-        # TEST QO'SHISH
+        # ADD TEST
         # =========================
 
         if text.startswith("/addtest"):
@@ -106,14 +143,7 @@ async def main_handler(message: Message):
             if len(parts) < 5:
 
                 await message.answer(
-                    "❌ Format noto'g'ri.\n\n"
-
-                    "📌 To'g'ri format:\n\n"
-
-                    "/addtest 331 "
-                    "18.05.2026-20:00 "
-                    "19.05.2026-20:00 "
-                    "1A 2B 3C"
+                    "❌ Format xato."
                 )
 
                 return
@@ -125,7 +155,7 @@ async def main_handler(message: Message):
             end_text = parts[3]
 
             # =========================
-            # VAQT
+            # TIME
             # =========================
 
             if start_text == "0" and end_text == "0":
@@ -150,16 +180,14 @@ async def main_handler(message: Message):
                 except:
 
                     await message.answer(
-                        "❌ Sana formatida xato.\n\n"
-
-                        "📌 Format:\n"
+                        "❌ Sana format xato.\n\n"
                         "18.05.2026-20:00"
                     )
 
                     return
 
             # =========================
-            # JAVOBLAR
+            # ANSWERS
             # =========================
 
             answers = {}
@@ -177,13 +205,13 @@ async def main_handler(message: Message):
             except:
 
                 await message.answer(
-                    "❌ Javob formatida xato."
+                    "❌ Javoblar xato."
                 )
 
                 return
 
             # =========================
-            # TEST SAQLASH
+            # SAVE
             # =========================
 
             tests[test_id] = {
@@ -195,7 +223,6 @@ async def main_handler(message: Message):
                 "end_time": end_time
             }
 
-            # vaqt matni
             if start_time is None:
 
                 time_text = "♾ Cheklanmagan"
@@ -210,60 +237,115 @@ async def main_handler(message: Message):
             await message.answer(
                 f"✅ Test saqlandi\n\n"
 
-                f"🆔 Test ID: {test_id}\n\n"
+                f"🆔 ID: {test_id}\n"
 
                 f"{time_text}\n\n"
 
-                f"📚 Savollar soni: {len(answers)}"
+                f"📚 Savollar: {len(answers)}"
             )
 
             return
 
         # =========================
-        # NATIJALAR
+        # RESULTS
         # =========================
 
-        if text == "/results":
+        if text.startswith("/results"):
 
-            if not results:
+            parts = text.split()
 
-                await message.answer(
-                    "📭 Hali natijalar yo'q."
-                )
+            # ALL RESULTS
+            if len(parts) == 1:
+
+                if not results:
+
+                    await message.answer(
+                        "📭 Natijalar yo'q."
+                    )
+
+                    return
+
+                response = "📊 Barcha natijalar\n\n"
+
+                for i, result in enumerate(results, 1):
+
+                    response += (
+
+                        f"{i}. 👤 {result['name']}\n"
+
+                        f"🆔 Test: "
+                        f"{result['test_id']}\n"
+
+                        f"✅ {result['correct']}/"
+                        f"{result['total']}\n"
+
+                        f"❌ Xato: "
+                        f"{result['wrong_questions']}\n"
+
+                        f"📈 "
+                        f"{result['percent']:.0f}%\n"
+
+                        f"🕒 {result['time']}\n\n"
+                    )
+
+                await message.answer(response)
 
                 return
 
-            response = "📊 O'quvchilar natijalari\n\n"
+            # ONE TEST RESULTS
+            if len(parts) == 2:
 
-            for i, result in enumerate(results, start=1):
+                test_id = parts[1]
 
-                response += (
+                filtered = [
 
-                    f"{i}. 👤 {result['name']}\n"
+                    r for r in results
+                    if r["test_id"] == test_id
+                ]
 
-                    f"🆔 Test: {result['test_id']}\n"
+                if not filtered:
 
-                    f"✅ {result['correct']}/{result['total']}\n"
+                    await message.answer(
+                        "📭 Natija topilmadi."
+                    )
 
-                    f"❌ Xato savollar: "
-                    f"{result['wrong_questions']}\n"
+                    return
 
-                    f"📈 {result['percent']:.0f}%\n"
-
-                    f"🕒 {result['time']}\n\n"
+                response = (
+                    f"📊 {test_id} TEST NATIJALARI\n\n"
                 )
 
-            await message.answer(response)
+                for i, result in enumerate(filtered, 1):
 
-            return
+                    response += (
+
+                        f"{i}. 👤 {result['name']}\n"
+
+                        f"✅ {result['correct']}/"
+                        f"{result['total']}\n"
+
+                        f"❌ Xato: "
+                        f"{result['wrong_questions']}\n"
+
+                        f"📈 "
+                        f"{result['percent']:.0f}%\n"
+
+                        f"🕒 {result['time']}\n\n"
+                    )
+
+                await message.answer(response)
+
+                return
 
         return
 
     # =========================
-    # USER NAME SAVE
+    # NAME SAVE
     # =========================
 
-    if user_id in students and students[user_id].get("waiting_name"):
+    if user_id in students and students[user_id].get(
+        "waiting_name"
+    ):
 
         students[user_id]["name"] = text
 
@@ -272,7 +354,7 @@ async def main_handler(message: Message):
         await message.answer(
             "✅ Ism saqlandi.\n\n"
 
-            "📌 Test javoblarini yuboring.\n\n"
+            "📌 Test yuboring.\n\n"
 
             "Misol:\n"
             "331+1a2b3c4d5a"
@@ -289,25 +371,24 @@ async def main_handler(message: Message):
     if "+" not in text:
 
         await message.answer(
-            "❌ Format noto'g'ri.\n\n"
-
-            "📌 Misol:\n"
+            "❌ Format xato.\n\n"
+            "Misol:\n"
             "331+1a2b3c4d5a"
         )
 
         return
 
     # =========================
-    # AJRATISH
+    # SPLIT
     # =========================
 
     test_id, answers_text = text.split("+", 1)
 
-    # test mavjudmi
+    # TEST EXISTS
     if test_id not in tests:
 
         await message.answer(
-            "❌ Test ID topilmadi."
+            "❌ Test topilmadi."
         )
 
         return
@@ -321,31 +402,29 @@ async def main_handler(message: Message):
     now = datetime.now()
 
     # =========================
-    # VAQT TEKSHIRISH
+    # TIME CHECK
     # =========================
 
     if start_time is not None:
 
-        # hali boshlanmagan
         if now < start_time:
 
             await message.answer(
-                "⏳ Test hali boshlanmagan."
+                "⏳ Test boshlanmagan."
             )
 
             return
 
-        # tugagan
         if now > end_time:
 
             await message.answer(
-                "⛔ Test vaqti tugagan."
+                "⛔ Test tugagan."
             )
 
             return
 
     # =========================
-    # JAVOBLARNI O'QISH
+    # ANSWERS READ
     # =========================
 
     pattern = r'(\d+)([a-z])'
@@ -355,7 +434,7 @@ async def main_handler(message: Message):
     if not matches:
 
         await message.answer(
-            "❌ Javob formatida xato."
+            "❌ Javob xato."
         )
 
         return
@@ -367,7 +446,7 @@ async def main_handler(message: Message):
         student_answers[int(number)] = answer.upper()
 
     # =========================
-    # TEKSHIRISH
+    # CHECK
     # =========================
 
     correct_answers = test_data["answers"]
@@ -395,7 +474,7 @@ async def main_handler(message: Message):
     student_name = students[user_id]["name"]
 
     # =========================
-    # NATIJA SAQLASH
+    # SAVE RESULT
     # =========================
 
     results.append({
@@ -412,17 +491,19 @@ async def main_handler(message: Message):
 
         "percent": percent,
 
-        "time": datetime.now().strftime("%d.%m.%Y %H:%M")
+        "time": datetime.now().strftime(
+            "%d.%m.%Y %H:%M"
+        )
     })
 
     # =========================
-    # USER RESULT
+    # RESULT
     # =========================
 
     await message.answer(
         f"👤 {student_name}\n\n"
 
-        f"🆔 Test ID: {test_id}\n\n"
+        f"🆔 Test: {test_id}\n\n"
 
         f"✅ To'g'ri: {correct}\n"
 
@@ -430,19 +511,55 @@ async def main_handler(message: Message):
 
         f"📈 Natija: {percent:.0f}%\n\n"
 
-        f"❗ Xato savollar: {wrong_questions}"
+        f"❗ Xato savollar:\n"
+        f"{wrong_questions}"
     )
 
 # =========================
-# RUN
+# STARTUP
 # =========================
 
-async def main():
+async def on_startup(bot: Bot):
 
-    print("Bot ishga tushdi...")
+    await bot.set_webhook(WEBHOOK_URL)
 
-    await dp.start_polling(bot)
+    print("✅ Webhook o'rnatildi")
+
+# =========================
+# SHUTDOWN
+# =========================
+
+async def on_shutdown(bot: Bot):
+
+    await bot.delete_webhook()
+
+# =========================
+# MAIN
+# =========================
+
+def main():
+
+    dp.startup.register(on_startup)
+
+    dp.shutdown.register(on_shutdown)
+
+    app = web.Application()
+
+    SimpleRequestHandler(
+        dispatcher=dp,
+        bot=bot
+    ).register(app, path=WEBHOOK_PATH)
+
+    setup_application(app, dp, bot=bot)
+
+    web.run_app(
+        app,
+        host=WEB_SERVER_HOST,
+        port=WEB_SERVER_PORT
+    )
 
 if __name__ == "__main__":
 
-    asyncio.run(main())
+    logging.basicConfig(level=logging.INFO)
+
+    main()
